@@ -1,0 +1,181 @@
+/*
+ * Created on 29.07.2004
+ * Copyright (C) 2004 Sebastian Baltes (sebastian.baltes@gmx.de)
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser General Public License as published by
+ * the Free Software Foundation; either version 2.1 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Lesser General Public License for more details.
+ */
+package org.nascif.jspwiki.plugin.imagemapplus;
+
+
+import java.awt.Color;
+import java.lang.reflect.Field;
+import java.util.Map;
+
+import org.apache.wiki.util.TextUtil;
+
+/**
+ * @author Sebastian Baltes
+ */
+public class PluginParameterParser {
+  
+  private Map params;
+  private String usingModuleName;
+  private Map defaultParams;
+  private String defaultPrefix;
+  
+  public PluginParameterParser() {
+  }
+
+  public PluginParameterParser(Map params, String usingModuleName) {
+    this.params = params;
+    this.usingModuleName=usingModuleName;
+  }
+  
+  public String getString(String paramId) throws ParameterNotFoundException {
+    return (String)ensureNotNull(getString(paramId,null),paramId);
+  }
+
+  public Boolean getBoolean(String paramId) throws ParameterNotFoundException {
+    return (Boolean)ensureNotNull(getBoolean(paramId,null),paramId);  
+  }
+
+  public Integer getInteger(String paramId) throws ParameterNotFoundException {
+    return (Integer)ensureNotNull(getInteger(paramId,null),paramId);  
+  }
+  
+  public Color getColor(String paramId) throws ParameterNotFoundException {
+    return (Color)ensureNotNull(getColor(paramId,null),paramId);
+  }
+  
+  public String getString(String paramId, String default_) {
+    String value = getParamOrDefaultParam(paramId);
+    if (value == null) {
+      return default_;
+    } else {
+      return TextUtil.replaceEntities(value);
+    }
+  }
+
+  public Boolean getBoolean(String paramId, Boolean default_) {
+    Boolean value;
+    try {
+      value = new Boolean(getString(paramId,null));
+    } catch (Exception e) {
+      value = null;
+    }
+    if (value == null) {
+      return default_;
+    } else {
+      return value;
+    }
+  }
+
+  public Integer getInteger(String paramId, Integer default_) {
+    Integer value;
+    try {
+      value = new Integer(getString(paramId,null));
+    } catch (Exception e) {
+      value = null;
+    }
+    if (value == null) {
+      return default_;
+    } else {
+      return value;
+    }
+  }
+  
+  public Color getColor(String paramId, Color default_) {
+    Color value;
+    try {
+      value = parseColor(getString(paramId,null));
+    } catch (Exception e) {
+      value = null;
+    }
+    if (value == null) {
+      return default_;
+    } else {
+      return value;
+    }
+  }
+
+  public static Color parseColor(String color) {
+    if (color == null) {
+      return null;
+    }
+    try {
+      return Color.decode(color);
+    } catch (NumberFormatException nfe) {
+      try {
+        Field f = Color.class.getField(color);
+        return (Color) f.get(null);
+      } catch (Exception ce) {
+        return null;
+      }
+    }
+  }
+  
+  /**
+   * @return Returns the params.
+   */
+  public Map getParams() {
+    return params;
+  }
+  /**
+   * @param params The params to set.
+   */
+  public void setParams(Map params) {
+    this.params = params;
+  }
+  /**
+   * @return Returns the usingModuleName.
+   */
+  public String getUsingModuleName() {
+    return usingModuleName;
+  }
+  /**
+   * @param usingModuleName The usingModuleName to set.
+   */
+  public void setUsingModuleName(String usingModuleName) {
+    this.usingModuleName = usingModuleName;
+  }
+
+  public Object ensureNotNull(Object test, String paramId) throws ParameterNotFoundException {
+    if (test == null) {
+      throw new ParameterNotFoundException(paramId,usingModuleName);
+    } else {
+      return test;
+    }
+  }
+
+  public String getParamOrDefaultParam(String paramId) {
+    String value = (String) params.get(paramId);
+    if (value==null && defaultParams!=null) {
+      return (String) defaultParams.get(defaultPrefix+paramId);
+    } else {
+      return value;
+    }
+  }
+
+  /**
+   * @return Returns the defaultParams.
+   */
+  public Map getDefaultParams() {
+    return defaultParams;
+  }
+  /**
+   * @param defaultParams The defaultParams to set.
+   * @param defaultPrefix
+   */
+  public void setDefaultParams(Map defaultParams, String defaultPrefix) {
+    this.defaultParams = defaultParams;
+    this.defaultPrefix = defaultPrefix;
+  }
+}
