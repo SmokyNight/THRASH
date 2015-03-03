@@ -1,0 +1,305 @@
+/*
+ * Created on 24.07.2004
+ * Copyright (C) 2004 Sebastian Baltes (sebastian.baltes@gmx.de)
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser General Public License as published by
+ * the Free Software Foundation; either version 2.1 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Lesser General Public License for more details.
+ */
+package org.nascif.jspwiki.plugin.imagemapplus;
+
+import org.apache.wiki.util.FileUtil;
+import org.apache.wiki.api.exceptions.NoSuchVariableException;
+import org.apache.wiki.util.TextUtil;
+import org.apache.wiki.VariableManager;
+import org.apache.wiki.WikiContext;
+import org.apache.wiki.WikiEngine;
+import org.apache.wiki.attachment.Attachment;
+import org.apache.wiki.api.exceptions.PluginException;
+import org.apache.wiki.api.engine.PluginManager;
+import org.apache.wiki.api.plugin.WikiPlugin;
+import org.apache.wiki.ui.TemplateManager;
+import java.applet.Applet;
+import java.io.BufferedReader;
+import java.io.StringReader;
+import java.io.UnsupportedEncodingException;
+import java.net.URLEncoder;
+import java.text.CharacterIterator;
+import java.text.StringCharacterIterator;
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.StringTokenizer;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import javax.swing.text.EditorKit;
+import javax.swing.text.MutableAttributeSet;
+import javax.swing.text.html.HTML;
+import javax.swing.text.html.HTMLDocument;
+import javax.swing.text.html.HTMLEditorKit;
+import org.apache.log4j.Category;
+
+/**
+ * @author Sebastian Baltes
+ * @author Nascif Abousalh-Neto
+ */
+public class ImageMapPlus implements WikiPlugin {
+
+  private static final Category log = Category.getInstance(Applet.class);
+
+  public static final String PARAM_IMAGE  = "image";
+  public static final String PARAM_ALIGN  = "align";
+  public static final String PARAM_HEIGHT = "height";
+  public static final String PARAM_WIDTH  = "width";
+  public static final String PARAM_DEBUG  = "debug";
+  public static final String PARAM_PLUGINS = "plugins";
+
+  private static final String TOOLTIP_IDENTATION = "  ";
+  private static final String CONFIG_MARKER = "//";
+  /*
+   * @see org.apache.wiki.plugin.WikiPlugin#execute(org.apache.wiki.WikiContext,
+   *      java.util.Map)
+   */
+  public final String execute(WikiContext context, Map params) throws PluginException {
+    try {
+      return executeSafe(context, params);
+    } catch (PluginException e) {
+      throw e;
+    } catch (Exception e) {
+      String message = "error in " + this.getClass().getName() + ": " + e.getMessage();
+      log.info(message, e);
+      throw new PluginException(message);
+    }
+  }
+
+  /**
+   * @param context
+   * @param params
+   * @return
+   */
+  protected String executeSafe(WikiContext context, Map params) throws Exception {
+    PluginParameterParser parser = new PluginParameterParser(params, "ImageMapPlus");
+    String  imageName = parser.getString(PARAM_IMAGE);
+    String  body      = parser.getString(PluginManager.PARAM_BODY, "");
+    Integer width     = parser.getInteger(PARAM_WIDTH, null);
+    Integer height    = parser.getInteger(PARAM_HEIGHT, null);
+    String  align     = parser.getString(PARAM_ALIGN, null);
+    String  plugins   = parser.getString(PARAM_PLUGINS, "");
+    //boolean debug     = parser.getBoolean(PARAM_DEBUG, Boolean.FALSE).booleanValue();
+    boolean addedOverlib = false;
+
+    StringBuffer result = new StringBuffer();
+
+    result.append("<pre>" + plugins + "</pre>");
+
+    result.append("<map name=\"" + imageName + "\">");    
+
+    BufferedReader reader = new BufferedReader(new StringReader(body));
+    String line = reader.readLine();
+    WikiEngine engine = context.getEngine();
+    while (line != null) {
+      StringTokenizer tcomma = new StringTokenizer(line,";");
+      result.append("<area");
+      if (tcomma.hasMoreTokens()) {
+        String wlink = tcomma.nextToken();
+        if (wlink.indexOf("[") == -1) {
+          wlink = "["+wlink+"]";
+        }
+        String a = engine.textToHTML(context, wlink);
+        processAreaLink(result, a);
+      }
+      if (tcomma.hasMoreTokens()) {
+        String coords = tcomma.nextToken();
+        processAreaCoords(result, coords);
+      }
+      line = reader.readLine();
+      List tooltip = new ArrayList();
+      while (line != null && line.startsWith(TOOLTIP_IDENTATION)) {
+        tooltip.add(line.substring(TOOLTIP_IDENTATION.length()));
+        line = reader.readLine();
+      }
+      if (tooltip.size() > 0) {
+        if (!addedOverlib) {
+          registerOverlib(context, plugins);
+          addedOverlib = true;
+        }
+        processTooltip(context, result, tooltip);
+      }
+      result.append("/>");
+    }    
+    result.append("</map>");
+
+    result.append("<img class=\"ImageMap\"");
+    String link = imageName;  
+    Attachment attachment = engine.getAttachmentManager().getAttachmentInfo(context, imageName);
+    if (attachment != null) {
+      link = engine.getURL(WikiContext.ATTACH, attachment.getName(), null, false);
+    }
+    result.append(" src=\"").append(link).append("\"");
+    result.append(" usemap=\"#").append(imageName).append("\"");
+    appendIfSet(result, "align", align);
+    appendIfSet(result, "width", width);
+    appendIfSet(result, "height", height);
+    result.append(">\n");
+    
+    return result.toString();
+  }
+
+  private void processAreaLink(StringBuffer buf, String a) {
+    // <a href="url" alt="alt">alt</a>
+    int lhref = a.indexOf("href=\"");
+    if (lhref==-1) {
+      lhref = a.indexOf("HREF=\"");
+    }
+    if (lhref==-1) {
+      return;
+    }
+    lhref += 6;
+    int rhref = a.indexOf("\"",lhref);
+    if (rhref < lhref) {
+      return;
+    }
+    String url = a.substring(lhref, rhref);
+    String alt = "";
+    int lalt = a.indexOf("alt=\"");
+    if (lalt == -1) {
+      lalt = a.indexOf("ALT=\"");
+    }
+    if (lalt > 0) {
+      lalt += 5; 
+      int ralt = a.indexOf("\"",lalt);
+      if (ralt > lalt) {
+        alt = a.substring(lalt, ralt);
+      }
+    } else {
+      int ltext = a.indexOf(">");
+      int rtext = a.indexOf("<",ltext);
+      if (ltext > rtext) {
+        alt = a.substring(ltext+1, rtext); 
+      }
+    }
+    buf.append(" href=\"").append(url).append("\" alt=\"").append(alt).append("\"");
+  }
+
+  private void processTooltip(WikiContext context, StringBuffer buf, List tooltipLines) throws PluginException {
+    StringBuffer text = new StringBuffer();
+    StringBuffer configOptions = new StringBuffer();
+    boolean configDone = false;
+    for (Iterator iter = tooltipLines.iterator(); iter.hasNext();) {
+      String line = (String)iter.next();
+      if (configDone) { // text
+        text.append(line).append("\n");
+      } else {
+        if (line.startsWith(CONFIG_MARKER)) {
+          String options = line.substring(CONFIG_MARKER.length());
+          if (options.length() > 0) {
+            configOptions.append(",").append(options);
+          }
+        } else {
+          configDone = true;
+          text.append(line).append("\n");
+        }
+      }
+    }
+
+    String htmlText = context.getEngine().textToHTML(context, text.toString());
+    buf.append(" onmouseover=\"return overlib('");
+    buf.append(forJavaScript(htmlText));
+    buf.append("'");
+    String strOptions = configOptions.toString();
+    if (strOptions.length() > 0) {
+      buf.append(strOptions);
+    }
+    buf.append(");\" onmouseout=\"return nd();\"");
+  }
+  
+  private void processAreaCoords(StringBuffer buf, String data) 
+    throws PluginException {
+    String[] ar = data.split(":");
+    String[] coordAr = null;
+    String shape = null;
+    if (ar.length == 2) {
+      shape = ar[0].trim();
+      coordAr = ar[1].split(",");
+    } else {
+      if (ar.length == 1) {
+        coordAr = ar[0].split(",");
+        switch (coordAr.length) {
+          case 0: case 1: case 2:
+            throw new PluginException("Wrong format for coordinates on call to ImageMapPlus: " + data);
+          case 3: shape = "circle"; break;
+          case 4: shape = "rect"; break;
+          default: shape = "poly"; 
+        }
+      } else {
+      }
+    }
+    buf.append(" shape=\"").append(shape).append("\"");
+    buf.append(" coords=\"");
+    for (int i = 0; i < coordAr.length; i++) {
+      if (i > 0) {
+        buf.append(",");
+      }
+      buf.append(coordAr[i].trim());
+    }
+    buf.append("\"");
+  }
+
+  private static String forJavaScript(String text){
+    final StringBuffer result = new StringBuffer();
+
+    final StringCharacterIterator iterator = new StringCharacterIterator(text);
+    char character =  iterator.current();
+    while (character != CharacterIterator.DONE ){
+      /*
+      * All literals need to have backslashes doubled.
+      */
+      if (character == '\'') {
+        result.append("\\\'");
+      } else {
+        if (character == '"') {
+          result.append("\\\'");  //NOTE: *MUST* convert to single quotes as well!!!
+        } else {
+          if (character == '\n') {
+            result.append("<br/>");
+          } else {
+            //the char is not a special one
+            //add it to the result as is
+            result.append(character);
+          }
+        }
+      }
+      character = iterator.next();
+    }
+    return result.toString();
+  }
+
+  private final void appendIfSet(StringBuffer result, String tag, Object value) {
+    if (value != null) {
+      result.append(" ").append(tag).append("=\"").append(value).append("\"");
+    }
+  }
+
+  private void registerOverlib(WikiContext context, String plugins) {
+    TemplateManager.addResourceRequest( context, "script", "scripts/overlib/overlib.js" );
+    String[] pluginAr = plugins.split(",");
+    for (int i = 0; i < pluginAr.length; i++) {
+      String plugin = pluginAr[i];
+      if (plugin != null) {
+        plugin = plugin.trim();
+        if (plugin.length() > 0) {
+          TemplateManager.addResourceRequest( context, "script", 
+                                              "scripts/overlib/overlib_" + plugin + ".js");
+        }
+      }
+    }
+  }
+}
+
