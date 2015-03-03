@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+<project name="ImageMapPlus" default="jar" basedir=".">
+
+  <property name="build" value="classes"/>
+  <property name="dist" value="dist"/>
+  <property name="lib" value="lib"/>
+  <property name="src" value="src"/>
+  <property name="jar.name" value="ImageMapPlus.jar"/>
+  <property name="jspwiki.lib" value="c:/home/lib/jspwiki-2.4.24/JSPWiki/opened-war/WEB-INF/lib/"/>
+
+  <property name="wiki.target" value="JSPWiki"/>
+  <property name="tomcat.home" value="c:/home/bin/Tomcat-5.5.13-beta/"/>
+
+<!--   <property name="wiki.target"    value="JSPWiki"/> -->
+<!--   <property name="tomcat.home" value="c:/home/bin/Tomcat-5.5.13-beta"/> -->
+
+  <path id="project.classpath">
+    <pathelement location="${src}"/>
+    <fileset dir="${lib}">
+      <include name="*.jar"/> <!-- use **/*.jar if you have a nested lib -->
+    </fileset>
+  </path>
+
+  <!-- =================================================================== -->
+  <!-- Compiles code                                                       -->
+  <!-- =================================================================== -->
+  <!-- ${build} and ${src} are defined in build.properties                 -->
+  <!-- ${javac.debug} is defined in ifDebugBuild/ifReleaseBuild            -->
+  <target name="compile"
+          description="Compile source *.java files">
+    <mkdir dir="${build}"/>
+    <!-- was javac -->
+    <javac
+        srcdir="${src}"
+        debug="true"
+        destdir="${build}"
+        classpathref="project.classpath"
+        source="1.4"
+        includes="**/*.java">
+    </javac>
+  </target>
+
+
+  <!-- =================================================================== -->
+  <!-- Creates jar files                                                   -->
+  <!-- =================================================================== -->
+  <target name="build" depends="jar"/>
+
+  <target name="jar"
+          depends="compile"
+          description="Create the jar file">
+    <mkdir dir="${dist}"/>
+    <!-- Build the JAR files using the appropriate classes     -->
+    <!-- ${jar.name} ${dist} and ${build} are defined in build.properties -->
+    <jar jarfile="${dist}/${jar.name}">
+         <fileset dir="${build}"/>
+    </jar>
+  </target>
+
+  <!-- =================================================================== -->
+  <!-- Deploy                                                              -->
+  <!-- =================================================================== -->
+  <target name="refresh"
+          depends="tomcat-stop,deploy,tomcat-start"/>
+
+  <target name="deploy"
+          depends="jar"
+          description="Copies the jar file to the wiki /lib dir">
+    <copy file="${dist}/${jar.name}"
+         todir="${tomcat.home}/webapps/${wiki.target}/WEB-INF/lib/"/>
+  </target>
+
+
+  <target name="tomcat-start">
+<!--     <java jar="${tomcat.home}/bin/bootstrap.jar" fork="true"> -->
+<!--       <jvmarg line="-Dcatalina.home=${tomcat.home}"/> -->
+<!--     </java> -->
+    <exec executable="cmd.exe"> 
+      <arg line="/c net start &quot;Apache Tomcat&quot;"/>
+    </exec>
+  </target>
+  
+  <target name="tomcat-stop">
+<!--     <java jar="${tomcat.home}/bin/bootstrap.jar" fork="true"> -->
+<!--       <jvmarg line="-Dcatalina.home=${tomcat.home}"/> -->
+<!--       <arg line="stop"/> -->
+<!--     </java> -->
+    <exec executable="cmd.exe">
+      <arg line="/c net stop &quot;Apache Tomcat&quot;"/>
+    </exec>
+  </target>
+
+  <!-- =================================================================== -->
+  <!-- Clean                                                               -->
+  <!-- =================================================================== -->
+  <target name="clean"
+          description="Cleanup by removing work directories.">
+      <mkdir dir="${build}"/>
+      <delete dir="${build}"/>
+      <mkdir dir="${dist}"/>
+      <delete dir="${dist}"/>
+   </target>
+
+  <!-- =================================================================== -->
+  <!-- Dist                                                               -->
+  <!-- =================================================================== -->
+  <target name="dist"
+          depends="jar"
+          description="Creates jars for distribution.">
+      <tstamp/>
+      <copy file="${dist}/${jar.name}" tofile="${dist}/${ant.project.name}-${DSTAMP}.jar"/>
+      <zip destfile="${dist}/${ant.project.name}-src-${DSTAMP}.zip">
+        <fileset dir="${basedir}" includes="src/**/*.java,build.xml"/>
+      </zip>
+   </target>
+
+
+</project>
